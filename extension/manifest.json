@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "調整さん入力補助",
+  "version": "0.1.0",
+  "description": "調整さんの出欠入力ページで、フォーム入力を補助します。",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

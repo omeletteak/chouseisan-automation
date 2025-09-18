@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>調整さん入力補助</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      width: 300px;
+      padding: 10px;
+    }
+    .form-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    input[type="text"], textarea {
+      width: 95%;
+      padding: 5px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #07af4a;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0b9239;
+    }
+  </style>
+</head>
+<body>
+  <h3>調整さん 入力補助</h3>
+  <div class="form-group">
+    <label for="name">名前:</label>
+    <input type="text" id="name" name="name">
+  </div>
+  <div class="form-group">
+    <label for="comment">コメント:</label>
+    <textarea id="comment" name="comment" rows="3"></textarea>
+  </div>
+  <div class="form-group">
+      <label>出欠 (○△×で入力):</label>
+      <input type="text" id="attendances" placeholder="例: ○△×">
+  </div>
+  <button id="start-button">ページに入力する</button>
+  <script src="popup.js"></script>
+</body>
+</html>

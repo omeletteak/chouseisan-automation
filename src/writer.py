@@ -1,94 +1,95 @@
-import re
 import time
-from datetime import datetime, timedelta
-import requests
-from bs4 import BeautifulSoup
-from selenium import webdriver
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-def update_chouseisan_attendance(event_url: str, name: str, comment: str, attendances: dict[int, str]) -> bool:
+def register_attendance_semi_auto(event_url: str, name: str, comment: str, attendances: dict[int, str]):
     """
-    requestsを使用して、既存の調整さんイベントに出欠を登録・更新します。
+    Seleniumを使用して、ユーザーの操作を補助する形で出欠を登録します。
+    ブラウザが起動し、フォームが自動入力された後、ユーザーが手動で送信します。
     """
+    driver = None
     try:
+        options = uc.ChromeOptions()
+        print("ブラウザを起動しています...")
+        driver = uc.Chrome(options=options)
+        wait = WebDriverWait(driver, 10)
+        
         print(f"イベントページにアクセス中: {event_url}")
-        response = requests.get(event_url)
-        response.raise_for_status()
-        html_content = response.text
+        driver.get(event_url)
+        time.sleep(2) # ページ描画を待つ
 
-        # デバッグ用にHTMLコンテンツを出力
-        # print(html_content)
+        # 1. 初期状態のスクリーンショットを撮り、オーバーレイを確認
+        initial_screenshot_path = "debug_screenshot_initial.png"
+        driver.save_screenshot(initial_screenshot_path)
+        print(f"初期スクリーンショットを保存しました: {initial_screenshot_path}")
 
-        # CSRFトークンを抽出 (正規表現を修正)
-        csrf_match = re.search(r'name="_token" value="(.*?)"', html_content)
-        if not csrf_match:
-            # 別のパターンも試す (Vueコンポーネントの属性など)
-            csrf_match = re.search(r':csrf="(.*?)"' , html_content)
+        # 2. Cookieバナーなどがあれば閉じる試み (失敗しても続行)
+        try:
+            # Cookieバナーでよく使われるボタンのテキストやID/クラスで探す
+            cookie_button = driver.find_element(By.XPATH, "//button[contains(text(),'同意') or contains(text(),'OK') or contains(text(),'Accept')]")
+            print("Cookie同意ボタンらしきものが見つかりました。クリックします。")
+            cookie_button.click()
+            time.sleep(1) # クリック後の描画を待つ
+        except Exception as e:
+            print(f"Cookie同意ボタンは見つかりませんでした: {e}")
+
+        # 3. 「出欠を入力する」ボタンをクリック
+        print("「出欠を入力する」ボタンをクリックします...")
+        add_button = wait.until(EC.element_to_be_clickable((By.ID, "add_btn")))
+        add_button.click()
+
+        # 4. クリック後の状態で再度デバッグ情報を取得
+        print("フォームが表示されるのを待っています...")
+        time.sleep(3)
         
-        if not csrf_match:
-            print("エラー: CSRFトークンが見つかりませんでした。")
-            return False
-        csrf_token = csrf_match.group(1)
-        print(f"CSRFトークンを取得しました: {csrf_token}")
+        after_click_screenshot_path = "debug_screenshot_after_click.png"
+        driver.save_screenshot(after_click_screenshot_path)
+        print(f"クリック後のスクリーンショットを保存しました: {after_click_screenshot_path}")
 
-        # 日程情報を抽出
-        soup = BeautifulSoup(html_content, 'html.parser')
-        script_tag = soup.find('script', string=re.compile(r'window.Chouseisan'))
-        if not script_tag:
-            raise ValueError("イベントデータが見つかりませんでした。")
-        json_match = re.search(r'"choices"
-    :
-    (\[.*?\])', script_tag.string)
-        if not json_match:
-            raise ValueError("日程情報(choices)が見つかりませんでした。")
-        import json
-        choices = json.loads(json_match.group(1))
+        print("\n--- ボタンクリック後のページソース ---")
+        print(driver.page_source)
+        print("--- ページソース終わり---\n")
 
-        # 送信先URLを修正
-        action_url = "https://chouseisan.com/schedule/List/addRes"
-        event_hash = event_url.split('h=')[-1]
-        
+        # 5. フォーム入力処理
+        print("フォームに入力しています...")
+        name_input = wait.until(EC.presence_of_element_located((By.NAME, "name")))
+        name_input.clear()
+        name_input.send_keys(name)
+
+        comment_input = driver.find_element(By.NAME, "comment")
+        comment_input.clear()
+        comment_input.send_keys(comment)
+
         attendance_map = {'○': '1', '△': '2', '×': '3'}
-        form_data = {
-            '_token': csrf_token,
-            'h': event_hash,
-            'id': '',
-            'name': name,
-            'comment': comment,
-        }
-        for choice in choices:
-            choice_num = choice['num']
-            status_char = attendances.get(choice_num, '×')
-            form_data[f'kouho[{choice_num}]'] = attendance_map.get(status_char, '3')
+        for choice_num, status in attendances.items():
+            status_value = attendance_map.get(status)
+            if status_value:
+                radio_button_selector = f"input[name='kouho[{choice_num}]'][value='{status_value}']"
+                wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, radio_button_selector))).click()
 
-        print(f"送信データ: {form_data}")
-        print(f"出欠情報をPOSTしています: {action_url}")
-        post_response = requests.post(action_url, data=form_data, headers={'Referer': event_url}, allow_redirects=True)
-        post_response.raise_for_status()
-
-        # レスポンスURLや内容で成功を判断
-        if name in post_response.text and event_hash in post_response.url:
-            print(f"出欠の登録に成功しました: {name}")
-            return True
-        else:
-            print("エラー: 出欠の登録に失敗しました。")
-            return False
+        print("\nフォームへの自動入力を完了しました。")
+        input("ブラウザで内容を確認し、問題がなければ「入力する」ボタンを押してください。\n操作が完了したら、このコンソールでEnterキーを押すとブラウザが閉じます。")
 
     except Exception as e:
-        print(f"出欠の登録中にエラーが発生しました: {e}")
-        return False
+        print(f"処理中にエラーが発生しました: {e}")
+    finally:
+        if driver:
+            print("ブラウザを終了します。")
+            driver.quit()
 
 def main():
     event_url = "https://chouseisan.com/s?h=2cce651578f3462aab8ff7a256e4c4a9"
-    print("\n--- 出欠登録テスト --- ")
-    update_chouseisan_attendance(
+    print("\n--- 半自動出欠登録テスト (最終デバッグ) ---")
+    register_attendance_semi_auto(
         event_url=event_url,
-        name="Gemini Agent (requests)",
-        comment="requests経由で再挑戦",
+        name="Gemini Agent (Debug)",
+        comment="最終デバッグ実行",
         attendances={
             1: '○', 
-            2: '○', 
-            3: '△'  
+            2: '△', 
+            3: '×'
         }
     )
 
